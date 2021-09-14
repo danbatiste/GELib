@@ -1,0 +1,79 @@
+code = r'''
+#include <cupy/complex.cuh>
+extern "C" __global__
+void fract_file_kernel(const complex<float>* c, int* output_fractal_values,
+                       const float t, const int iter, int N) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid < N) {
+        complex<float> z = 0.0f;
+        int i = 0;
+        complex<float> z1 = 0.0f;
+        complex<float> z_denominator_1 = 0.0f;
+        complex<float> z2 = 0.0f;
+        complex<float> z_denominator_2 = 0.0f;
+        while (i < iter) {
+            z_denominator_1 = (2.0f*z*z + 8.0f*z*z + 1.0f);
+            z_denominator_2 = (1.0f);
+            if (z_denominator_1 == 0.0f) {
+                z_denominator_1 = 1.0f;
+            }
+            if (z_denominator_2 == 0.0f) {
+                z_denominator_2 = 1.0f;
+            }
+            z1 = (z*z*z + 4.0f*z*z + z + c[tid])/z_denominator_1;
+            z2 = (z*z + 4.0f*z*z + z + c[tid])/z_denominator_2;
+            z = z1*(1.0f - t) + z2*(t); //Linear interpolation between the two fractals
+            i++;
+            if (abs(z) > (2.0f)) {
+                output_fractal_values[tid] = i;
+                break;
+            }
+        }
+        if (i == iter) {
+            output_fractal_values[tid] = -1;
+        }
+    }
+}
+'''
+fract_file_kernel = cp.RawKernel(code, 'fract_file_kernel')
+
+
+
+frames = []
+framecount = 120
+fps = 120
+times = np.linspace(0.6, 1, num=framecount, dtype=cp.float32) # Must be an np linspace, not cp linspace!
+times = 1 - times # Reverse
+gpu_render = True
+
+fractal_function_input_type = cp.complex64
+fractal_function_output_type = cp.int32
+fractal_function = fract_file_kernel
+color_function = modulo_coloring_sqrt_shading_kernel
+
+for i in range(framecount):
+    t = times[i]
+    zoom = 1
+    center = [-0.5, 0]
+    corners = cp.array([
+        [center[0], center[1]],
+        [center[0], center[1]],
+    ], dtype=fractal_function_input_type) + cp.array([
+        [-1, -1],
+        [+1, +1],
+    ], dtype=fractal_function_input_type)/zoom
+
+    iterations = int(1000)
+
+    #mat_transform = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    
+    image_resolution = 500
+    height = 500
+    width = 500
+    #print(i, t)
+
+    frames.append(Frame(corners, image_resolution, width, height,
+                        fractal_function, color_function, iterations, t,
+                        fractal_function_input_type=fractal_function_input_type,
+                        fractal_function_output_type=fractal_function_output_type,
+                        gpu_render=gpu_render))

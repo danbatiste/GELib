@@ -66,6 +66,7 @@ def create_jpg_pixels(corners, resolution,
 class Frame():
     def __init__(self, corners, image_resolution, width, height,
                  fractal_function, color_function, iterations, t,
+                 filters_to_apply=[], # kwarg so as to not break older .fract files
                  gpu_render=True, fractal_function_input_type=cp.complex64,
                  fractal_function_output_type=cp.int32):
         # Args
@@ -77,7 +78,9 @@ class Frame():
         self.height = height
         self.width = width
         self.t = t
+
         # KWArgs
+        self.filters_to_apply = filters_to_apply
         self.gpu_render = gpu_render
         self.fractal_function_input_type = fractal_function_input_type
         self.fractal_function_output_type = fractal_function_output_type
@@ -85,19 +88,23 @@ class Frame():
     def show_image(self, mode="RGBX"):
         rgbx_pixels = create_jpg_pixels(self.corners, self.image_resolution, self.fractal_function,self.color_function, self.iterations, self.t)
         ImgRGBX = Image.fromarray(rgbx_pixels, mode=mode)
-        ImgRGBX.show()
+        for image_filter in self.filters_to_apply:
+            ImgRGBX = image_filter(np.asarray(ImgRGBX))
+        ImgRGBX.show() # Maybe replace with cv2.imshow()?
     
     def render_image(self, filename, mode="RGBX"):
         rgbx_pixels = create_jpg_pixels(self.corners, self.image_resolution, 
                                         self.fractal_function, self.color_function, self.iterations, self.t,
                                         self.gpu_render, self.fractal_function_input_type, self.fractal_function_output_type)
-        #print(pixel32[:5])
         if self.gpu_render:
             rgbx_pixels = cp.asnumpy(rgbx_pixels)
-        ImgRGBX = Image.fromarray(rgbx_pixels, mode=mode)
+        ImgRGBX = np.asarray(Image.fromarray(rgbx_pixels, mode=mode).convert("RGB"))
         rgbx_pixels = None # Freeing memory
-        ImgRGBX = ImgRGBX.resize((self.width, self.height), resample=Image.ANTIALIAS)
-        ImgRGBX.save(filename)
+        for image_filter in self.filters_to_apply:
+            ImgRGBX = image_filter(ImgRGBX) # Apply filters (uses CPU)
+        img = Image.fromarray(ImgRGBX, mode="RGB")
+        img = img.resize((self.width, self.height), resample=Image.ANTIALIAS)
+        img.save(filename)
         #imageio.imwrite(filename, pixel32, format="jpg")
         
     def render_image_nozoom(self, filename, mode="RGBX"):
@@ -113,8 +120,11 @@ class Frame():
                                         self.gpu_render, self.fractal_function_input_type, self.fractal_function_output_type)
         rgbx_pixels = cp.asnumpy(rgbx_pixels)
         ImgRGBX = Image.fromarray(rgbx_pixels, mode=mode)
-        ImgRGBX = ImgRGBX.resize((self.width, self.height), resample=Image.ANTIALIAS)
-        return ImgRGBX
+        for image_filter in self.filters_to_apply:
+            ImgRGBX = image_filter(np.asarray(ImgRGBX)) # Apply filters (using CPU)
+        img = Image.fromarray(ImgRGBX, mode="RGBA").convert("RGB")
+        img = img.resize((self.width, self.height), resample=Image.ANTIALIAS)
+        return img
     
 
     
@@ -154,9 +164,20 @@ class Animation():
                 ofile.write(file_contents)
         
         # Loop through all frames and render
+        render_start_time = time.time()
         for i in range(total_frames):
             if i <= 10 or i%10 == 0:
-                print(f"Rendering frame {i}")
+                if i == 0:
+                    est_remaining_time = "---:--:--"
+                else:
+                    total_seconds = time.time() - render_start_time
+                    seconds_per_frame = total_seconds/i
+                    remaining_frames = total_frames - i
+                    est_remaining_time_seconds = str(int((seconds_per_frame*remaining_frames) % 60)).zfill(2)
+                    est_remaining_time_mins = str(int(((seconds_per_frame*remaining_frames))%3600//60)).zfill(2)
+                    est_remaining_time_hrs = str(int(seconds_per_frame*remaining_frames//3600)).zfill(3)
+                    est_remaining_time = f"{est_remaining_time_hrs}:{est_remaining_time_mins}:{est_remaining_time_seconds}"
+                print(f"Rendering frame {i}".ljust(20), f"ETA: {est_remaining_time}".ljust(20))
             if i%100 == 0:
                 gpu_free_memory()
             frame = self.frames[i]

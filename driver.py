@@ -10,6 +10,7 @@ mempool = cp.get_default_memory_pool()
 pinned_mempool = cp.get_default_pinned_memory_pool()
 
 from GELib.GPU.gpu_functions import gpu_free_memory
+from GELib.Filter import filters, kernels # Required
 from GELib.Fractal.fractal_engine import *
 
 
@@ -21,9 +22,9 @@ file_path = os.path.join("fract_files", fract_file_name)
 with open(file_path, 'rb') as fract_file:
     exec(fract_file.read())
 
-# Frames and fps will be initialized after the fract file is run
+## Frames and fps will be initialized after the fract file is run
 testanim = Animation(frames, fps=fps, file_path=file_path)
-testanim.stream() #There is also .animate
+#testanim.animate()#.animate()#.stream() #There is also .animate
 _="""
 s = io.StringIO()
 pr = cProfile.Profile()
@@ -38,11 +39,11 @@ stats = pstats.Stats(pr).sort_stats(pstats.SortKey.TIME)
 stats.print_stats(0.06)
 #"""
 
-_="""
+#_="""
 s = io.StringIO()
 pr = cProfile.Profile()
 pr.enable()
-testanim.stream()
+testanim.animate()
 pr.disable
 ps = pstats.Stats(pr, stream=s)
 stats = pstats.Stats(pr).sort_stats(pstats.SortKey.TIME)

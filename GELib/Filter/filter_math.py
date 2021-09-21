@@ -1,8 +1,7 @@
 import numpy as np
-from PIL import Image
 from copy import copy
-import time
-import kernels
+import scipy.signal as scp
+
 
 def get_neighbor_range(x, y, height, width, radius):
     neighbors = np.array([
@@ -18,7 +17,7 @@ def get_neighbor_range(x, y, height, width, radius):
     return neighbor_range
 
 
-def convolve(image, kernel, verbose=False):
+#def slow_convolve(image, kernel, verbose=False):
     height, width = len(image), len(image[0])
     kernel_width, kernel_height = len(kernel), len(kernel[0])
     kernel_result_pixel = [kernel_width//2, kernel_height//2]
@@ -35,7 +34,7 @@ def convolve(image, kernel, verbose=False):
             last_percent = cur_percent
         
         for i in range(width):
-            result_pixel = np.array([0, 0, 0], dtype=float)
+            result_pixel = np.array(0*copy(new_image[0][0]), dtype=float)
             for y, kernel_row in enumerate(kernel):
                 for x, weight in enumerate(kernel_row):
                     offset_x = x - kernel_result_pixel[0]
@@ -48,39 +47,30 @@ def convolve(image, kernel, verbose=False):
                         continue
                     
                     gross_pixel = weight*image[image_coord_y][image_coord_x]
+                    #print(gross_pixel)
+                    #print(result_pixel)
                     result_pixel += gross_pixel
             
             result_pixel = np.array([value if value >= 0 else 0 for value in result_pixel], dtype=float)
             result_pixel = np.array([value if value <= 255 else 255 for value in result_pixel], dtype=float)
+            #print("NEW IMAGE:", new_image[j][i])
+            #print("NEW IMAGE:", new_image)
+            #print("RESULT PIXEL:", result_pixel)
+            #if new_image[j][i] == 0:
+            #    R, G, B = result_pixel
+            #    result_pixel = int(B) << 16 | int(G) << 8 | int(R)
             new_image[j][i] = result_pixel
     return new_image
 
-
-if __name__ == "__main__":
-    start = time.time()
-    kernel = kernels.stitching_kernel(10, 0.01)
-    print(kernel)
-    image = np.asarray(Image.open("Filters/earth.png", mode="RGB"))
-    image2 = convolve(image, kernel, verbose=True)
-    print("Shape:", image2.shape)
-    name = str(time.time())[:10]
-    Image.fromarray(image2).save(f"Filters/results/{name}.jpg")
-    print(f"TOTAL MINUTES: {(time.time() - start)/60}")
-    Image.fromarray(image2).show()
-
-    """
-    frames = 120
-    fps = 60
-    try: os.mkdir("animations/TREE_EDGE_DETECTION")
-    except: pass
-    ts = np.linspace(0,1,frames)
+def convolve(image, kernel, verbose=False):
+    # Convolve image with kernel
+    image = image.astype(np.float64) # Converting dtype before convolving fixed bugs
+    x, y, channels = image.shape
+    for i in range(channels):
+        image[:,:,i] = np.convolve(image[:,:,i].reshape((x*y,)), kernel.reshape((kernel.shape[0]*kernel.shape[1],)), mode="same").reshape((x,y))
     
-    for frame, t in enumerate(ts):
-        kernel = edge_detect_kernel(intensity=0.3 + 3.0*t)
-        out_image = convolve(image, kernel)
-        Image.fromarray(out_image).save("animations/TREE_EDGE_DETECTION/frame" + str(frame).zfill(3) + ".jpg")
-        print(f"Finished frame {frame}")
-
-    command = f"ffmpeg -framerate {fps} -start_number 0000 -i frame%03d.jpg TREE_EDGE_DETECTION.mp4"
-    os.system(command)
-    """
+    # Filter out values only in 0 <= x <= 255
+    image[image<=0] = 0
+    image[image>=254] = 254
+    image = image.astype(np.uint8)
+    return image

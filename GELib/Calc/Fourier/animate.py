@@ -1,6 +1,7 @@
 from fourier import fourier, inverse_fourier
 from cmath import *
 import numpy as np
+import cupy as cp
 
 if __name__ == "__main__":
     import os

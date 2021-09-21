@@ -107,6 +107,7 @@ class Square(Object):
         ])
 
 
+# TODO fix issue with this thing transposing for some reason
 class Baked_Object(Object):
     """An image. A pixel matrix."""
     def __init__(self, image, x, y, z):

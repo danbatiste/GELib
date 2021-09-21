@@ -6,18 +6,45 @@ def average_blur_kernel(radius):
         for _ in range(1+2*radius)
     ])
 
-def sharpen_kernel():
+def sharpen_kernel(amount):
     return np.array([
-        [-0.5, -1.0, -0.5],
-        [-1.0, 7.0, -1.0],
-        [-0.5, -1.0, -0.5],
-    ])
+        [0, 0, 0],
+        [0, 1, 0],
+        [0, 0, 0]
+    ]) + np.array([
+        [0.0, -1.0, 0.0],
+        [-1.0, 4, -1.0],
+        [0.0, -1.0, 0.0],
+    ])*amount
 
 def edge_detect_kernel(intensity=0.25):
     return intensity*np.array([
         [-1, 0, 1],
         [-1, 0, 1],
         [-1, 0, 1]
+    ])
+
+def edge_detect_kernel_2(intensity=0.25):
+    return intensity*np.array([
+        [1, 1, 0],
+        [1, 0, -1],
+        [0, -1, -1]
+    ])
+
+def interpolated(t, kernel):
+    end_kernel = np.zeros(kernel.shape)
+    end_kernel[kernel.shape[0]//2][kernel.shape[1]//2] = 1
+    return kernel*(1-t) + end_kernel*t
+
+def edge_detect_kernel_3(pct, intensity=0.25):
+    return (1-pct)*intensity*np.array([
+        [1, 1, 0],
+        [1, 0, -1],
+        [0, -1, -1]
+    ]) + pct*np.array([
+        [0, 0, 0],
+        [0, 1, 0],
+        [0, 0, 0]
     ])
 
 def stitching_kernel(radius, squish):
@@ -31,7 +58,7 @@ def stitching_kernel(radius, squish):
             c = (1 + offset_total)/(1+4*radius)
         kernel[i][radius] = c
         kernel[radius][i] = c
-    print(kernel.sum().sum())
+    #print(kernel.sum().sum())
     return kernel
 
 

@@ -15,8 +15,8 @@ Modules: Cupy, Numpy, PIL, and optionally pstats
 
 ## Example Animations
 
-![Starrybrot](https://imgur.com/qGPSfYe.gif)
-![Starrybrot](https://imgur.com/OfQ8MZb.gif)
-![Starrybrot](https://imgur.com/jKLNpjb.gif)
-![Starrybrot](https://imgur.com/ppy7vVv.gif)
+![Melting Mandelbrot](https://imgur.com/qGPSfYe.gif)
+![Starrybrot](https://imgur.com/OfQ8MZb)
+![Starrybrot](https://imgur.com/jKLNpjb)
+![Starrybrot](https://imgur.com/ppy7vVv)
 ![Starrybrot](https://user-images.githubusercontent.com/22204498/129466242-3d4ab4ca-43dc-4671-9f73-6ef47f2e1d46.gif)

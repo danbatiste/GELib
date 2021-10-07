@@ -1,0 +1,274 @@
+fract_file_coloring_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void fract_file_coloring_kernel(const float* escape_val, int* output_rgbx_ints, const float t, int N) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x; // thread id/index?
+    if (tid < N) {
+        if (escape_val[tid] == -1.0f) {
+            output_rgbx_ints[tid] = 0;
+        } else {
+            float S, V;
+            S = 1.0f;
+            //V = 1.0f;
+            V = sin(t);
+
+            float shade = (1.0f + sin(escape_val[tid]/(3.0f - t)))/2.0f;
+
+            float hue = fmod(escape_val[tid]/17.0f, 360);
+
+            float huedeg = fmod(360.0f*(hue + 3.0f*t), 360);
+
+            float k_5 = fmod((5 + huedeg/60), 6);
+            float k_3 = fmod((3 + huedeg/60), 6);
+            float k_1 = fmod((1 + huedeg/60), 6);
+            k_5 = min(k_5, 4.0 - k_5);
+            k_5 = min(k_5, 1.0);
+            k_5 = V - V*S*max(k_5, 0.0);
+            k_3 = min(k_3, 4.0 - k_3);
+            k_3 = min(k_3, 1.0);
+            k_3 = V - V*S*max(k_3, 0.0);
+            k_1 = min(k_1, 4.0 - k_1);
+            k_1 = min(k_1, 1.0);
+            k_1 = V - V*S*max(k_1, 0.0);
+
+            int R = round(shade*255*( 1 - k_5 ));
+            int G = round(shade*255*( 1 - k_3 ));
+            int B = round(shade*255*( 1 - k_1 ));
+
+            output_rgbx_ints[tid] = (B << 16) | (G << 8) | R;
+        }
+    }
+}
+''', 'fract_file_coloring_kernel')
+
+
+
+equations = [
+    ("z*z + c[tid]","1.0f")
+]
+
+equations_code = r''' '''
+init_code = r''' '''
+for n, equation in enumerate(equations):
+    numerator, denominator = equation
+    init = r'''
+complex<float> z{n};
+'''
+    equation_code = r'''
+            z_denominator_{0} = ({2});
+            if (z_denominator_{0} == 0.0f) {
+                z_denominator_{0} = 1.0f;
+            }
+            z{0} = ({1})/z_denominator_{0};
+'''.format(n, numerator, denominator)
+    equations_code += code
+    init_code += init
+
+code = r'''
+#include <cupy/complex.cuh>
+extern "C" __global__
+void fract_file_kernel(const complex<float>* c, float* output_fractal_values,
+                       const float t, const int iter, int N) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid < N) {
+        complex<float> z = 0.0f;
+        int i = 0;
+
+        float abs_z;
+        complex<float> z0, z1, z2, z3, z4, z5, z6, z7, z8, z9, z10, z11, z12;
+        complex<float> z_denominator_0, z_denominator_1, z_denominator_2, z_denominator_3, z_denominator_4, z_denominator_5, z_denominator_6;
+        complex<float> z_denominator_7, z_denominator_8, z_denominator_9, z_denominator_10, z_denominator_11, z_denominator_12, global_denom;
+        float t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12; // Temporal positions of each wave
+        float conv; //, conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, conv9, conv10, conv11, conv12; // Convergence values of each fractal
+        
+        //Interpolation settings
+        float wideness = 8.0f; // Wideness of each wave
+        float spacing = 4.0f;   // Distance from the peaks of each wave
+        float conciseness = 4.0f;
+        float uvt = t*wideness*12;
+        t0 = exp(-pow((uvt - spacing*0), conciseness)/wideness);
+        t1 = exp(-pow((uvt - spacing*1), conciseness)/wideness);
+        t2 = exp(-pow((uvt - spacing*2), conciseness)/wideness);
+        t3 = exp(-pow((uvt - spacing*3), conciseness)/wideness);
+        t4 = exp(-pow((uvt - spacing*4), conciseness)/wideness);
+        t5 = exp(-pow((uvt - spacing*5), conciseness)/wideness);
+        t6 = exp(-pow((uvt - spacing*6), conciseness)/wideness);
+        t7 = exp(-pow((uvt - spacing*7), conciseness)/wideness);
+        t8 = exp(-pow((uvt - spacing*8), conciseness)/wideness);
+        t9 = exp(-pow((uvt - spacing*9), conciseness)/wideness);
+        t10 = exp(-pow((uvt - spacing*10), conciseness)/wideness);
+        t11 = exp(-pow((uvt - spacing*11), conciseness)/wideness);
+        t12 = exp(-pow((uvt - spacing*12), conciseness)/wideness);
+
+
+        while (i < iter) {
+            global_denom = (exp(-z) + c[tid])*(1-t) + (z*z*sinh(t) + c[tid])*t;
+
+            z_denominator_0 = (global_denom);
+            if (z_denominator_0 == 0.0f) {
+                z_denominator_0 = 1.0f;
+            }
+            z0 = (z*tan(z) + c[tid])/z_denominator_0;
+            //conv0 = 200.0f;
+            
+            z_denominator_1 = (z0 + global_denom);
+            if (z_denominator_1 == 0.0f) {
+                z_denominator_1 = 1.0f;
+            }
+            z1 = (z*z*tan(z*z) + c[tid])/z_denominator_1;
+            //conv1 = 200.0f;
+            
+            z_denominator_2 = (z1 + global_denom);
+            if (z_denominator_2 == 0.0f) {
+                z_denominator_2 = 1.0f;
+            }
+            z2 = (z*z*z*tan(z*z*z) + c[tid])/z_denominator_2;
+            //conv2 = 200.0f;
+
+
+            z_denominator_3 = (z2 + global_denom);
+            if (z_denominator_3 == 0.0f) {
+                z_denominator_3 = 1.0f;
+            }
+            z3 = (z*z*z*z*tan(z*z*z*z) + c[tid])/z_denominator_3;
+            //conv3 = 200.0f;
+
+            z_denominator_4 = (z3 + global_denom);
+            if (z_denominator_4 == 0.0f) {
+                z_denominator_4 = 1.0f;
+            }
+            z4 = (z*z*z*z*z*tan(z*z*z*z*z) + c[tid])/z_denominator_4;
+            //conv4 = 200.0f;
+
+            z_denominator_5 = (z4 + global_denom);
+            if (z_denominator_5 == 0.0f) {
+                z_denominator_5 = 1.0f;
+            }
+            z5 = (z*z*z*z*z*z*tan(z*z*z*z*z*z) + c[tid])/z_denominator_5;
+            //conv5 = 200.0f;
+
+            z_denominator_6 = (z5 + global_denom);
+            if (z_denominator_6 == 0.0f) {
+                z_denominator_6 = 1.0f;
+            }
+            z6 = (z*z*z*z*z*z*cos(z*z*z*z*z*z) + c[tid])/z_denominator_6;
+            //conv6 = 200.0f;
+            
+            z_denominator_7 = (z6 + global_denom);
+            if (z_denominator_7 == 0.0f) {
+                z_denominator_7 = 1.0f;
+            }
+            z7 = (z*z*z*z*tan(z*z*z*z) + c[tid])/z_denominator_7;
+            //conv7 = 200.0f;
+
+            z_denominator_8 = (z7 + global_denom);
+            if (z_denominator_8 == 0.0f) {
+                z_denominator_8 = 1.0f;
+            }
+            z8 = (z*z*z*z*z*z*z*tan(z*z*z*z*z*z*z) + c[tid])/z_denominator_8;
+            //conv8 = 200.0f;
+
+            z_denominator_9 = (z8 + global_denom);
+            if (z_denominator_9 == 0.0f) {
+                z_denominator_9 = 1.0f;
+            }
+            z9 = (z*z*z*z*z*z*z*z*tan(z*z*z*z*z*z*z*z) + c[tid])/z_denominator_9;
+            //conv9 = 200.0f;
+
+            z_denominator_10 = (z9 + global_denom);
+            if (z_denominator_10 == 0.0f) {
+                z_denominator_10 = 1.0f;
+            }
+            z10 = (z*z*z*z*z*z*z*z*z*tan(z*z*z*z*z*z*z*z*z) + c[tid])/z_denominator_10;
+            //conv10 = 200.0f;
+
+            z_denominator_11 = (z10 + global_denom);
+            if (z_denominator_11 == 0.0f) {
+                z_denominator_11 = 1.0f;
+            }
+            z11 = (z*z*z*z*z*z*z*z*z*tan(z*z*z*z*z*z*z*z*z) + c[tid])/z_denominator_11;
+            //conv11 = 200.0f;
+            
+            z_denominator_12 = (z11 + global_denom);
+            if (z_denominator_12 == 0.0f) {
+                z_denominator_12 = 1.0f;
+            }
+            z12 = (z*z*z*z*z*z*z*z*z*z*sinh(z*z*z*z*z*z*z*z*z*z) + c[tid])/z_denominator_12;
+            //conv12 = 200.0f;
+            
+
+            z = z0*t0 + z1*t1 + z2*t2 + z3*t3 + z4*t4 + z5*t5 + z6*t6 + z7*t7 + z8*t8 + z9*t9 + z10*t10 + z11*t11 + z12*t12; //Interpolation using bell-shaped curves
+            conv = 2.0f; // conv0*t0 + conv1*t1 + conv2*t2 + conv3*t3 + conv4*t4 + conv5*t5 + conv6*t6 + conv7*t7 + conv8*t8 + conv9*t9 + conv10*t10 + conv11*t11 + conv12*t12;
+            i++;
+            abs_z = abs(z);
+            if (abs_z > conv) {
+                output_fractal_values[tid] = abs_z - conv;
+                break;
+            }
+        }
+        if (i == iter) {
+            output_fractal_values[tid] = -1.0f;
+        }
+    }
+}
+'''
+fract_file_kernel = cp.RawKernel(code, 'fract_file_kernel')
+
+##
+## Driver code
+##
+fractal_function = fract_file_kernel
+color_function = fract_file_coloring_kernel
+
+fps = 10
+seconds = 45
+framecount = fps*seconds
+print("TOTAL FRAMES: ", framecount)
+
+frames = []
+times = np.linspace(0, 1, num=framecount, dtype=cp.float32) # Must be an np linspace, not cp linspace!
+gpu_render = True
+fractal_function_input_type = cp.complex64
+fractal_function_output_type = cp.int32
+
+
+for i in range(framecount):
+    t = times[i]
+    pct_t = (t - times[0])/(times[-1] - times[0])
+    zoom = 2*(1-t) + 0.9*t
+    center = [0, 0]
+
+    iterations = int(35)
+    image_resolution = 1*np.array([1920, 1080])//4
+    detail_resolution = 1*image_resolution
+
+    kernels_to_apply = [
+    #kernels.gaussian_blur_kernel(3, fwhm=3),
+    #kernels.sharpen_kernel(3),
+    #kernels.edge_detect_kernel_3(1 - (1 - pct_t)**(0.7), intensity=2),
+    #kernels.interpolated(pct_t, kernels.stitching_kernel(4, 4)),
+    ]
+
+
+
+    # Applying filter settings
+    # TODO edit engine so that it does one fft for all filters
+    filters_to_apply = [filters.custom_kernel(k) for k in kernels_to_apply]
+
+    # Applying image resolution settings
+    width, height = image_resolution
+    width_height_ratio = width/height # Leaves the height as 1 but the width as some multiple of that
+    corners = cp.array([
+        [center[0], center[1]],
+        [center[0], center[1]],
+    ], dtype=fractal_function_input_type) + cp.array([
+        [-1*width_height_ratio, -1],
+        [+1*width_height_ratio, +1],
+    ], dtype=fractal_function_input_type)/zoom
+
+    # Appending all settings
+    frames.append(Frame(corners, detail_resolution, image_resolution[0], image_resolution[1],
+                        fractal_function, color_function, iterations, t,
+                        filters_to_apply,
+                        fractal_function_input_type=fractal_function_input_type,
+                        fractal_function_output_type=fractal_function_output_type,
+                        gpu_render=gpu_render))

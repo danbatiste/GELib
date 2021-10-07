@@ -1,0 +1,183 @@
+fract_file_coloring_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void fract_file_coloring_kernel(const float* escape_val, int* output_rgbx_ints, const float t, int N) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x; // thread id/index?
+    if (tid < N) {
+        if (escape_val[tid] == -1.0f) {
+            output_rgbx_ints[tid] = 0;
+        } else {
+            float S, V;
+            S = 1.0f;
+            V = 1.0f;
+            V = 1 - (1-t)*(1-t)*(1-t)*(1-t);
+
+            float shade = (1.0f + sin(pow(escape_val[tid],0.2f)/(2.0f - t)))/2.0f;
+
+            float hue = fmod(log(log(escape_val[tid])), 360);
+
+            float huedeg = fmod(360.0f*(hue + 0.0f*t), 360);
+
+            float k_5 = fmod((5 + huedeg/60), 6);
+            float k_3 = fmod((3 + huedeg/60), 6);
+            float k_1 = fmod((1 + huedeg/60), 6);
+            k_5 = min(k_5, 4.0 - k_5);
+            k_5 = min(k_5, 1.0);
+            k_5 = V - V*S*max(k_5, 0.0);
+            k_3 = min(k_3, 4.0 - k_3);
+            k_3 = min(k_3, 1.0);
+            k_3 = V - V*S*max(k_3, 0.0);
+            k_1 = min(k_1, 4.0 - k_1);
+            k_1 = min(k_1, 1.0);
+            k_1 = V - V*S*max(k_1, 0.0);
+
+            int R = round(shade*255*( 1 - k_5 ));
+            int G = round(shade*255*( 1 - k_3 ));
+            int B = round(shade*255*( 1 - k_1 ));
+
+            output_rgbx_ints[tid] = (R << 16) | (G << 8) | B;
+        }
+    }
+}
+''', 'fract_file_coloring_kernel')
+
+
+
+equations = [
+    ("sin(z) + c[tid]", "cos(z)"),
+    ("pow(z, 2.0f) + c[tid]", "1.0f"),
+    ("pow(z, 2.0f) + c[tid]", "1.0f"),
+    ("pow(sin(z), 2.0f) + c[tid]", "1.0f"),
+    ("pow(cos(z), 5.0f) + c[tid]", "1.0f"),
+    ("pow(sin(z), 2.0f) + c[tid]", "1.0f"),
+    ("pow(z, 2.0f) + c[tid]", "1.0f"),
+    ("pow(z, 2.0f) + c[tid]", "1.0f"),
+    ("sin(z) + c[tid]", "cos(z)"),
+]
+
+
+
+while_loop_code = r''' '''
+init_code = f'''float uvt = t*wideness*{len(equations)};'''
+z_expression_code = []
+for n, equation in enumerate(equations):
+    n = str(n)
+    numerator, denominator = equation
+    init = r'''
+        complex<float> z{0}, t{0}, z_denominator_{0};
+        t{0} = exp(-pow((uvt - spacing*{0}), conciseness)/wideness);
+    '''.format(n)
+    equation_code = '''
+        z_denominator_{0} = ({2});
+        if (z_denominator_{0} == 0.0f) {3}
+            z_denominator_{0} = 1.0f;
+        {4}
+        z{0} = ({1})/z_denominator_{0};
+    '''.format(n, numerator, denominator, "{", "}")
+    z_expression_code.append("z{0}*t{0}".format(n))
+    while_loop_code += equation_code
+    init_code += init
+z_expression_code = ' + '.join(z_expression_code)
+
+
+code = r'''
+#include <cupy/complex.cuh>
+extern "C" __global__
+void fract_file_kernel(const complex<float>* c, float* output_fractal_values,
+                       const float t, const int iter, int N) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid < N) {
+        complex<float> z = 0.0f;
+        int i = 0;
+
+        float abs_z, conv;
+        complex<float> global_denom;
+      
+        //Interpolation settings
+        float wideness = 3.0f; // Wideness of each wave
+        float spacing = 2.0f;   // Distance from the peaks of each wave
+        float conciseness = 2.0f;
+
+''' + init_code + r'''
+
+        while (i < iter) {
+            global_denom = (exp(-z) + c[tid])*(1-t) + (z*z*sinh(t) + c[tid])*t;
+
+''' + while_loop_code + r'''
+
+            z = ''' + z_expression_code + r''';
+            conv = 1000.0f + abs(z)*0.7f; // conv0*t0 + conv1*t1 + conv2*t2 + conv3*t3 + conv4*t4 + conv5*t5 + conv6*t6 + conv7*t7 + conv8*t8 + conv9*t9 + conv10*t10 + conv11*t11 + conv12*t12;
+            i++;
+            abs_z = abs(z);
+            if (abs_z > conv) {
+                output_fractal_values[tid] = abs_z - conv;
+                break;
+            }
+        }
+        if (i == iter) {
+            output_fractal_values[tid] = -1.0f;
+        }
+    }
+}
+'''
+fract_file_kernel = cp.RawKernel(code, 'fract_file_kernel')
+
+##
+## Driver code
+##
+fractal_function = fract_file_kernel
+color_function = fract_file_coloring_kernel
+
+fps = 60
+seconds = 18*2
+framecount = fps*seconds
+print("TOTAL FRAMES: ", framecount)
+
+frames = []
+times = np.linspace(0, 0.75, num=framecount, dtype=cp.float32) # Must be an np linspace, not cp linspace!
+gpu_render = True
+fractal_function_input_type = cp.complex64
+fractal_function_output_type = cp.int32
+
+# Using an offset sin(offset + t) function, I can interpolate between whatever I want!!!!... I think?
+
+for i in range(framecount):
+    t = times[i]
+    pct_t = (t - times[0])/(times[-1] - times[0])
+    zoom = 0.6
+    center = [0, 0]
+
+    iterations = int(100)
+    image_resolution = np.array([1920, 1080])
+    detail_resolution = 4*image_resolution
+
+    kernels_to_apply = [
+    #kernels.gaussian_blur_kernel(3, fwhm=3),
+    kernels.sharpen_kernel(5),
+    #kernels.edge_detect_kernel_3(1 - (1 - pct_t)**(0.7), intensity=2),
+    #kernels.interpolated(pct_t, kernels.stitching_kernel(4, 4)),
+    ]
+
+
+
+    # Applying filter settings
+    # TODO edit engine so that it does one fft for all filters
+    filters_to_apply = [filters.custom_kernel(k) for k in kernels_to_apply]
+
+    # Applying image resolution settings
+    width, height = image_resolution
+    width_height_ratio = width/height # Leaves the height as 1 but the width as some multiple of that
+    corners = cp.array([
+        [center[0], center[1]],
+        [center[0], center[1]],
+    ], dtype=fractal_function_input_type) + cp.array([
+        [-1*width_height_ratio, -1],
+        [+1*width_height_ratio, +1],
+    ], dtype=fractal_function_input_type)/zoom
+
+    # Appending all settings
+    frames.append(Frame(corners, detail_resolution, image_resolution[0], image_resolution[1],
+                        fractal_function, color_function, iterations, t,
+                        filters_to_apply,
+                        fractal_function_input_type=fractal_function_input_type,
+                        fractal_function_output_type=fractal_function_output_type,
+                        gpu_render=gpu_render))

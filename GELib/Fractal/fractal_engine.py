@@ -17,32 +17,35 @@ from GELib.Fractal.fractal_color_functions import *
 from GELib.Fractal.fractal_functions import *
 
 
-def create_jpg_pixels(corners, resolution,
+def create_jpg_pixels(corners, detail_resolution,
                       fractal_function, color_function, iterations, t,
                       gpu_render, fractal_function_input_type, fractal_function_output_type):
     """Lower left corner to upper right corner"""
     x0, y0 = corners[0]
     x1, y1 = corners[1]
     
+    detail_width, detail_height = detail_resolution
+
     if gpu_render:
         # Doing the actual math on the GPU
         # N = 1000 # Hardcoded for now
         # M = resolution//1000 #(resolution must be a multiple of 500)
-        # the thread count should be resolution**2
-        GRID_SIZE = (resolution**2//500,)
-        BLOCK_SIZE = (500,)
-        x = cp.linspace(x0, x1, resolution, dtype=fractal_function_input_type)
-        y = 1j*cp.linspace(y0, y1, resolution, dtype=fractal_function_input_type)
+        # the total thread count should be resolution**2 (GRID_SIZE*BLOCK_SIZE)
+        THREADS_PER_BLOCK = 700
+        GRID_SIZE = ((detail_width*detail_height)//THREADS_PER_BLOCK,)
+        BLOCK_SIZE = (THREADS_PER_BLOCK,)
+        x = np.linspace(x0, x1, detail_width, dtype=fractal_function_input_type)
+        y = 1j*np.linspace(y0, y1, detail_height, dtype=fractal_function_input_type)
         x, y = cp.meshgrid(x, y)
         xyplane = x + y
         
         # Initialize output matrix, then calculate fractal values
-        output_fractal_values = cp.zeros(resolution**2, dtype=fractal_function_output_type).reshape(resolution, resolution)   # Can this just be one object, the xyplane? Or do I have to use a separate array for output...
-        fractal_function(GRID_SIZE, BLOCK_SIZE, (xyplane, output_fractal_values, t, iterations, resolution**2)) # The kernel
+        output_fractal_values = cp.zeros((detail_width*detail_height,), dtype=fractal_function_output_type).reshape(detail_height, detail_width)   # Can this just be one object, the xyplane? Or do I have to use a separate array for output...
+        fractal_function(GRID_SIZE, BLOCK_SIZE, (xyplane, output_fractal_values, t, iterations, GRID_SIZE[0]*BLOCK_SIZE[0]))#detail_width*detail_height)) # The kernel
 
         # Initialize pixel matrix, then calculate pixel values
-        output_rgbx_ints = cp.zeros(resolution**2, dtype=cp.int32).reshape(resolution, resolution)
-        color_function(GRID_SIZE, BLOCK_SIZE, (output_fractal_values, output_rgbx_ints, t, resolution**2))
+        output_rgbx_ints = cp.zeros((detail_width*detail_height,), dtype=cp.int32).reshape(detail_height, detail_width)
+        color_function(GRID_SIZE, BLOCK_SIZE, (output_fractal_values, output_rgbx_ints, t,  GRID_SIZE[0]*BLOCK_SIZE[0]))#detail_width*detail_height))
         
         # Debug
         #print(np.max(output_fractal_values))
@@ -58,25 +61,25 @@ def create_jpg_pixels(corners, resolution,
         return output_rgbx_ints
     else:
         #y, x = np.mgrid[y0:y1:resolution*1j,x0:x1:resolution*1j]
-        x, y = np.mgrid[x0:x1:resolution*1j,y0:y1:resolution*1j]
+        x, y = np.mgrid[x0:x1:detail_width*1j,y0:y1:detail_height*1j]
         # Get the values from the fractal function
         return color_function(fractal_function(x, y, iterations, t), t)
 
 
 class Frame():
-    def __init__(self, corners, image_resolution, width, height,
+    def __init__(self, corners, detail_resolution, image_width, image_height,
                  fractal_function, color_function, iterations, t,
                  filters_to_apply=[], # kwarg so as to not break older .fract files
                  gpu_render=True, fractal_function_input_type=cp.complex64,
                  fractal_function_output_type=cp.int32):
         # Args
         self.fractal_function = fractal_function
-        self.image_resolution = image_resolution
+        self.detail_resolution = detail_resolution
         self.corners = corners
         self.iterations = iterations
         self.color_function = color_function
-        self.height = height
-        self.width = width
+        self.image_height = image_height
+        self.image_width = image_width
         self.t = t
 
         # KWArgs
@@ -84,46 +87,37 @@ class Frame():
         self.gpu_render = gpu_render
         self.fractal_function_input_type = fractal_function_input_type
         self.fractal_function_output_type = fractal_function_output_type
-          
+
     def show_image(self, mode="RGBX"):
-        rgbx_pixels = create_jpg_pixels(self.corners, self.image_resolution, self.fractal_function,self.color_function, self.iterations, self.t)
-        ImgRGBX = Image.fromarray(rgbx_pixels, mode=mode)
-        for image_filter in self.filters_to_apply:
-            ImgRGBX = image_filter(np.asarray(ImgRGBX))
-        ImgRGBX.show() # Maybe replace with cv2.imshow()?
-    
+        print("Rendering...")
+        img = self.return_image(mode=mode)
+        img.show() # Maybe replace with cv2.imshow()?
+        
     def render_image(self, filename, mode="RGBX"):
-        rgbx_pixels = create_jpg_pixels(self.corners, self.image_resolution, 
+        img = self.return_image(mode=mode)
+        img.save(filename)
+
+    def return_image(self, mode="RGBX"):
+        # Get pixels
+        rgbx_pixels = create_jpg_pixels(self.corners, self.detail_resolution, 
                                         self.fractal_function, self.color_function, self.iterations, self.t,
                                         self.gpu_render, self.fractal_function_input_type, self.fractal_function_output_type)
         if self.gpu_render:
             rgbx_pixels = cp.asnumpy(rgbx_pixels)
         ImgRGBX = np.asarray(Image.fromarray(rgbx_pixels, mode=mode).convert("RGB"))
-        rgbx_pixels = None # Freeing memory
-        for image_filter in self.filters_to_apply:
-            ImgRGBX = image_filter(ImgRGBX) # Apply filters (uses CPU)
-        img = Image.fromarray(ImgRGBX, mode="RGB")
-        img = img.resize((self.width, self.height), resample=Image.ANTIALIAS)
-        img.save(filename)
-        #imageio.imwrite(filename, pixel32, format="jpg")
+        rgbx_pixels = None # Free memory
         
-    def render_image_nozoom(self, filename, mode="RGBX"):
-        # Supposedly more efficient, but numbers dont show it
-        rgbx_pixels = create_jpg_pixels(self.corners, self.image_resolution, self.fractal_function, self.color_function, self.iterations, self.t)
-        ImgRGBX = Image.fromarray(rgbx_pixels, mode=mode)
-        ImgRGBX = ImgRGBX.resize((self.width, self.height), resample=Image.ANTIALIAS)
-        ImgRGBX.save(filename)
-
-    def return_image(self, mode="RGBX"):
-        rgbx_pixels = create_jpg_pixels(self.corners, self.image_resolution, 
-                                        self.fractal_function, self.color_function, self.iterations, self.t,
-                                        self.gpu_render, self.fractal_function_input_type, self.fractal_function_output_type)
-        rgbx_pixels = cp.asnumpy(rgbx_pixels)
-        ImgRGBX = Image.fromarray(rgbx_pixels, mode=mode)
+        # Apply filters (CPU)
         for image_filter in self.filters_to_apply:
-            ImgRGBX = image_filter(np.asarray(ImgRGBX)) # Apply filters (using CPU)
-        img = Image.fromarray(ImgRGBX, mode="RGBA").convert("RGB")
-        img = img.resize((self.width, self.height), resample=Image.ANTIALIAS)
+            ImgRGBX = image_filter(ImgRGBX)
+        
+        # Denoising
+        #img = cv2.fastNlMeansDenoisingColored(ImgRGBx, None, 20, 3, 7, 11)
+        #img = Image.fromarray(img, mode="RGB")
+
+        # Anti aliasing
+        img = Image.fromarray(ImgRGBX, mode="RGB")
+        img = img.resize((self.image_width, self.image_height), resample=Image.LANCZOS)
         return img
     
 
@@ -166,6 +160,7 @@ class Animation():
         # Loop through all frames and render
         render_start_time = time.time()
         for i in range(total_frames):
+            # ETA display & occasional memory clearing
             if i <= 10 or i%10 == 0:
                 if i == 0:
                     est_remaining_time = "---:--:--"
@@ -180,10 +175,13 @@ class Animation():
                 print(f"Rendering frame {i}".ljust(20), f"ETA: {est_remaining_time}".ljust(20))
             if i%100 == 0:
                 gpu_free_memory()
+            # Render the frame
             frame = self.frames[i]
             filename = "frame" + str(i).zfill(len(str(total_frames))) + f".{self.image_extension}"
             path = os.path.join(frames_folder, filename)
             frame.render_image(path)
+
+        # Finishing up
         print(f"All frames rendered in {round(time.time() - start_time, 2)}s.")
         gpu_free_memory()
         # Convert to .{extension} (default is mp4) with ffmpeg

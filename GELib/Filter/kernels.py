@@ -1,10 +1,20 @@
 import numpy as np
+import scipy
 
 def average_blur_kernel(radius):
     return np.array([
         [1/(1+2*radius)**2 for _ in range(1+2*radius)]
         for _ in range(1+2*radius)
     ])
+
+def gaussian_blur_kernel(size, fwhm=3):
+    # Code taken from https://stackoverflow.com/a/14525830/2034219
+    x = np.arange(0, size, 1, float)
+    y = x[:,np.newaxis]
+    x0 = y0 = size // 2
+    gaussian_kernel = np.exp(-4*np.log(2) * ((x-x0)**2 + (y-y0)**2) / fwhm**2)
+    gaussian_kernel = gaussian_kernel/np.sum(gaussian_kernel)
+    return gaussian_kernel
 
 def sharpen_kernel(amount):
     return np.array([

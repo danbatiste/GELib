@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 
 
 class Canvas():
@@ -13,8 +14,8 @@ class Canvas():
             obj_width, obj_height, _ = object_image.shape
             obj_center = [obj_width//2, obj_height//2]
             for i, row in enumerate(object_image):
-                offset_x = object.x - obj_center[0]
-                offset_y = object.y - obj_center[1]
+                offset_x = int(object.x) - obj_center[0]
+                offset_y = int(object.y) - obj_center[1]
                 image_coord_x = offset_x + i
                 if not (0 <= image_coord_x < self.width - 1):
                     continue
@@ -78,8 +79,6 @@ class Object():
 
 
 
-
-
 class Circle(Object):
     def __init__(self, x, y, z, color, radius):
         super().__init__(x, y, z, color)
@@ -95,7 +94,24 @@ class Circle(Object):
 
         return obj_image
 
-  
+
+class Line(Object):
+    def __init__(self, x0, y0, x1, y1, z, color, thickness=20):
+        super().__init__(200+x0, 200+y0, z, color)
+        self.color = color
+        self.z = z
+        self.thickness = thickness
+        self.x0 = x0
+        self.y0 = y0
+        self.x1 = x1
+        self.y1 = y1
+
+    def draw(self):
+        length, width = abs(self.x1 - self.x0), abs(self.y1 - self.y0)
+        canvas = -np.ones((int(length), int(width), 3))
+        canvas = cv2.line(canvas, (int(self.x0), int(self.y0)), (int(self.x1), int(self.y1)), self.color, self.thickness)
+        return canvas
+
 class Square(Object):
     def __init__(self, x, y, z, color, size):
         super().__init__(x, y, z, color)

@@ -13,14 +13,5 @@ A CUDA-compatible NVIDIA GPU
 Modules: Cupy, Numpy, PIL, and optionally pstats
 
 
-## Example Animations
-
-
-
-![undefined - Imgur (2)](https://user-images.githubusercontent.com/22204498/136351155-1feffcb5-742d-4f8d-8b5d-aceef3784ecd.gif)
+## Example Animation
 ![Starrybrot](https://user-images.githubusercontent.com/22204498/129466242-3d4ab4ca-43dc-4671-9f73-6ef47f2e1d46.gif)
-
-These were too big:
-https://imgur.com/OfQ8MZb
-https://imgur.com/jKLNpjb
-https://imgur.com/ppy7vVv

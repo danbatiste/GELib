@@ -11,10 +11,9 @@ import os
 mempool = cp.get_default_memory_pool()
 pinned_mempool = cp.get_default_pinned_memory_pool()
 
-
-from GELib.GPU.gpu_functions import gpu_free_memory
-from GELib.Fractal.fractal_color_functions import *
-from GELib.Fractal.fractal_functions import *
+from ..GPU import gpu_free_memory
+from .fractal_color_functions import *
+from .fractal_functions import *
 
 
 def create_jpg_pixels(corners, detail_resolution,

@@ -2,10 +2,6 @@ import numpy as np
 import scipy.ndimage as ndimage
 import cv2
 
-
-
-
-
 def time_transform_func(t):
     def f(coords):
         x, y, channel = coords

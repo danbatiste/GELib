@@ -2,7 +2,7 @@ import numpy as np
 from PIL import Image
 from copy import copy
 import time
-import kernels
+from . import kernels
 
 
 def convolve(image, kernel, verbose=False):
